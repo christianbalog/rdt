@@ -69,63 +69,50 @@ def init_database():
             sql_script = f.read()
             cursor.executescript(sql_script)
     else:
-        # Sinon, créer une structure minimale
+        # Sinon, créer une structure minimale (nouvelle structure simplifiée)
         print("⚠️  Script SQL non trouvé, création structure minimale...")
         cursor.executescript("""
+            -- Table: capteur (3 attributs)
             CREATE TABLE IF NOT EXISTS capteur (
                 id_capteur INTEGER PRIMARY KEY AUTOINCREMENT,
                 nom_capteur TEXT NOT NULL,
-                type_capteur TEXT NOT NULL,
-                device_id TEXT,
-                actif INTEGER NOT NULL DEFAULT 1,
-                date_creation TEXT NOT NULL DEFAULT (datetime('now'))
+                etat_capteur INTEGER NOT NULL DEFAULT 1 CHECK(etat_capteur IN (0, 1))
             );
 
+            CREATE INDEX IF NOT EXISTS idx_capteur_etat ON capteur(etat_capteur);
+
+            -- Table: evenement (3 attributs)
             CREATE TABLE IF NOT EXISTS evenement (
                 id_evenement INTEGER PRIMARY KEY AUTOINCREMENT,
-                event_id TEXT UNIQUE,
-                date_evenement TEXT NOT NULL,
-                timestamp REAL NOT NULL,
-                etat_capteur INTEGER NOT NULL,
+                date TEXT NOT NULL,
                 id_capteur INTEGER NOT NULL,
-                metadata TEXT,
                 FOREIGN KEY (id_capteur) REFERENCES capteur(id_capteur) ON DELETE CASCADE
             );
 
+            CREATE INDEX IF NOT EXISTS idx_evenement_capteur ON evenement(id_capteur);
+            CREATE INDEX IF NOT EXISTS idx_evenement_date ON evenement(date DESC);
+
+            -- Table: media (5 attributs)
             CREATE TABLE IF NOT EXISTS media (
                 id_media INTEGER PRIMARY KEY AUTOINCREMENT,
-                type_media TEXT NOT NULL,
                 video BLOB NOT NULL,
-                taille INTEGER NOT NULL,
-                duree INTEGER,
-                date_media TEXT NOT NULL,
-                timestamp REAL NOT NULL,
+                date TEXT NOT NULL,
                 id_capteur INTEGER NOT NULL,
-                id_evenement INTEGER,
-                numero_camera INTEGER NOT NULL,
-                resolution TEXT,
-                codec TEXT,
-                FOREIGN KEY (id_capteur) REFERENCES capteur(id_capteur) ON DELETE CASCADE,
-                FOREIGN KEY (id_evenement) REFERENCES evenement(id_evenement) ON DELETE SET NULL
+                numero_camera INTEGER NOT NULL CHECK(numero_camera IN (1, 2)),
+                FOREIGN KEY (id_capteur) REFERENCES capteur(id_capteur) ON DELETE CASCADE
             );
 
-            CREATE TABLE IF NOT EXISTS configuration (
-                cle TEXT PRIMARY KEY,
-                valeur TEXT NOT NULL,
-                date_modification TEXT NOT NULL DEFAULT (datetime('now'))
-            );
+            CREATE INDEX IF NOT EXISTS idx_media_capteur ON media(id_capteur);
+            CREATE INDEX IF NOT EXISTS idx_media_date ON media(date DESC);
+            CREATE INDEX IF NOT EXISTS idx_media_camera ON media(numero_camera);
 
             -- Capteurs par défaut
-            INSERT OR IGNORE INTO capteur (id_capteur, nom_capteur, type_capteur, device_id) VALUES
-            (1, 'PIR Entrée', 'motion', 'raspberry-1'),
-            (2, 'Tapis Salon', 'pressure', 'raspberry-1'),
-            (3, 'Bouton Arrêt', 'button', 'raspberry-1'),
-            (4, 'Caméra 1', 'camera', 'raspberry-1');
-
-            -- Config par défaut
-            INSERT OR REPLACE INTO configuration (cle, valeur) VALUES
-            ('mode_systeme', 'actif'),
-            ('duree_enregistrement', '10');
+            INSERT OR IGNORE INTO capteur (id_capteur, nom_capteur, etat_capteur) VALUES
+            (1, 'PIR Entrée', 1),
+            (2, 'Tapis Salon', 1),
+            (3, 'Bouton Arrêt', 1),
+            (4, 'Caméra 1', 1),
+            (5, 'Caméra 2', 1);
         """)
 
     conn.commit()
@@ -133,16 +120,16 @@ def init_database():
     print("✅ Base de données initialisée")
 
 
-def get_capteur_id_by_type(capteur_type):
-    """Récupère l'ID du capteur par son type"""
+def get_capteur_id_by_name(nom_capteur):
+    """Récupère l'ID du capteur par son nom"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     cursor.execute("""
         SELECT id_capteur FROM capteur
-        WHERE type_capteur = ? AND device_id = ? AND actif = 1
+        WHERE nom_capteur = ? AND etat_capteur = 1
         LIMIT 1
-    """, (capteur_type, DEVICE_ID))
+    """, (nom_capteur,))
 
     row = cursor.fetchone()
     conn.close()
@@ -150,17 +137,20 @@ def get_capteur_id_by_type(capteur_type):
     return row[0] if row else None
 
 
-def save_evenement(event_id, capteur_type, etat, metadata=None):
+def save_evenement(nom_capteur):
     """
     Enregistre un événement dans la base de données
+
+    Args:
+        nom_capteur: Nom du capteur (ex: 'PIR Entrée')
 
     Returns:
         int: id_evenement
     """
-    id_capteur = get_capteur_id_by_type(capteur_type)
+    id_capteur = get_capteur_id_by_name(nom_capteur)
 
     if not id_capteur:
-        print(f"⚠️  Capteur type '{capteur_type}' non trouvé dans la base")
+        print(f"⚠️  Capteur '{nom_capteur}' non trouvé dans la base")
         return None
 
     conn = sqlite3.connect(DB_PATH)
@@ -169,17 +159,9 @@ def save_evenement(event_id, capteur_type, etat, metadata=None):
     now = datetime.now()
 
     cursor.execute("""
-        INSERT INTO evenement
-        (event_id, date_evenement, timestamp, etat_capteur, id_capteur, metadata)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        event_id,
-        now.isoformat(),
-        time.time(),
-        etat,
-        id_capteur,
-        json.dumps(metadata) if metadata else None
-    ))
+        INSERT INTO evenement (date, id_capteur)
+        VALUES (?, ?)
+    """, (now.isoformat(), id_capteur))
 
     id_evenement = cursor.lastrowid
     conn.commit()
@@ -188,9 +170,14 @@ def save_evenement(event_id, capteur_type, etat, metadata=None):
     return id_evenement
 
 
-def save_media(video_data, id_evenement, id_capteur, numero_camera=1):
+def save_media(video_data, id_capteur, numero_camera=1):
     """
     Enregistre un média (vidéo) dans la base de données
+
+    Args:
+        video_data: Données binaires de la vidéo (BLOB)
+        id_capteur: ID du capteur caméra
+        numero_camera: Numéro de la caméra (1 ou 2)
 
     Returns:
         int: id_media
@@ -201,23 +188,9 @@ def save_media(video_data, id_evenement, id_capteur, numero_camera=1):
     now = datetime.now()
 
     cursor.execute("""
-        INSERT INTO media
-        (type_media, video, taille, duree, date_media, timestamp,
-         id_capteur, id_evenement, numero_camera, resolution, codec)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        'video',
-        video_data,
-        len(video_data),
-        RECORD_DURATION,
-        now.isoformat(),
-        time.time(),
-        id_capteur,
-        id_evenement,
-        numero_camera,
-        f"{VIDEO_WIDTH}x{VIDEO_HEIGHT}",
-        'h264'
-    ))
+        INSERT INTO media (video, date, id_capteur, numero_camera)
+        VALUES (?, ?, ?, ?)
+    """, (video_data, now.isoformat(), id_capteur, numero_camera))
 
     id_media = cursor.lastrowid
     conn.commit()
@@ -226,16 +199,6 @@ def save_media(video_data, id_evenement, id_capteur, numero_camera=1):
     return id_media
 
 
-def get_config(key, default=None):
-    """Récupère une valeur de configuration"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT valeur FROM configuration WHERE cle = ?", (key,))
-    row = cursor.fetchone()
-    conn.close()
-
-    return row[0] if row else default
 
 
 # ============================================
@@ -379,28 +342,22 @@ def on_message(client, userdata, message):
         print(f"   Event ID: {event_id}")
         print(f"   Topic: {message.topic}")
 
-        # Déterminer le type de capteur et l'état
-        capteur_type = None
-        etat = 1  # Par défaut: détection
+        # Déterminer le nom du capteur selon le type d'événement
+        nom_capteur = None
 
         if event_type == 'MOTION_DETECTED':
-            capteur_type = 'motion'
+            nom_capteur = 'PIR Entrée'
         elif event_type == 'BUTTON_PRESSED':
-            capteur_type = 'button' if 'button' in message.topic else 'pressure'
+            nom_capteur = 'Bouton Arrêt' if 'button' in message.topic else 'Tapis Salon'
         elif event_type == 'PRESSURE_DETECTED':
-            capteur_type = 'pressure'
+            nom_capteur = 'Tapis Salon'
 
-        if not capteur_type:
+        if not nom_capteur:
             print(f"⚠️  Type d'événement non reconnu: {event_type}")
             return
 
         # Enregistrer l'événement
-        id_evenement = save_evenement(
-            event_id=event_id,
-            capteur_type=capteur_type,
-            etat=etat,
-            metadata=payload
-        )
+        id_evenement = save_evenement(nom_capteur)
 
         if not id_evenement:
             print(f"❌ Impossible d'enregistrer l'événement")
@@ -409,15 +366,14 @@ def on_message(client, userdata, message):
         print(f"✅ Événement enregistré (ID: {id_evenement})")
 
         # Si c'est un mouvement, capturer la vidéo
-        if capteur_type == 'motion':
+        if event_type == 'MOTION_DETECTED':
             video_data = record_video(event_id)
 
             if video_data:
-                id_capteur = get_capteur_id_by_type('camera')
+                id_capteur = get_capteur_id_by_name('Caméra 1')
                 if id_capteur:
                     id_media = save_media(
                         video_data=video_data,
-                        id_evenement=id_evenement,
                         id_capteur=id_capteur,
                         numero_camera=1
                     )

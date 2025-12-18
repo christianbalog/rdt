@@ -7,77 +7,49 @@ metadata:
     app: sqlite
 data:
   init-surveillance.sql: |
-    -- Initialisation de la base de données surveillance.db
+    -- Initialisation de la base de données surveillance.db (Structure Simplifiée)
 
-    -- Table capteur
+    -- Table: capteur (3 attributs)
     CREATE TABLE IF NOT EXISTS capteur (
         id_capteur INTEGER PRIMARY KEY AUTOINCREMENT,
         nom_capteur TEXT NOT NULL,
-        type_capteur TEXT NOT NULL CHECK(type_capteur IN ('motion', 'pressure', 'button', 'camera')),
-        device_id TEXT NOT NULL,
-        actif INTEGER DEFAULT 1,
-        date_creation TEXT DEFAULT (datetime('now'))
+        etat_capteur INTEGER NOT NULL DEFAULT 1 CHECK(etat_capteur IN (0, 1))
     );
 
-    -- Table evenement
+    CREATE INDEX IF NOT EXISTS idx_capteur_etat ON capteur(etat_capteur);
+
+    -- Table: evenement (3 attributs)
     CREATE TABLE IF NOT EXISTS evenement (
         id_evenement INTEGER PRIMARY KEY AUTOINCREMENT,
-        event_id TEXT UNIQUE NOT NULL,
-        date_evenement TEXT NOT NULL,
-        timestamp REAL NOT NULL,
-        etat_capteur INTEGER DEFAULT 0,
-        id_capteur INTEGER,
-        metadata TEXT,
-        FOREIGN KEY (id_capteur) REFERENCES capteur(id_capteur)
+        date TEXT NOT NULL,
+        id_capteur INTEGER NOT NULL,
+        FOREIGN KEY (id_capteur) REFERENCES capteur(id_capteur) ON DELETE CASCADE
     );
 
-    -- Table media
+    CREATE INDEX IF NOT EXISTS idx_evenement_capteur ON evenement(id_capteur);
+    CREATE INDEX IF NOT EXISTS idx_evenement_date ON evenement(date DESC);
+
+    -- Table: media (5 attributs)
     CREATE TABLE IF NOT EXISTS media (
         id_media INTEGER PRIMARY KEY AUTOINCREMENT,
-        type_media TEXT NOT NULL CHECK(type_media IN ('video', 'photo')),
-        video BLOB,
-        taille INTEGER,
-        duree INTEGER,
-        date_media TEXT NOT NULL,
-        timestamp REAL NOT NULL,
-        id_capteur INTEGER,
-        id_evenement INTEGER,
-        numero_camera INTEGER,
-        resolution TEXT DEFAULT '1280x720',
-        codec TEXT DEFAULT 'h264',
-        FOREIGN KEY (id_capteur) REFERENCES capteur(id_capteur),
-        FOREIGN KEY (id_evenement) REFERENCES evenement(id_evenement)
+        video BLOB NOT NULL,
+        date TEXT NOT NULL,
+        id_capteur INTEGER NOT NULL,
+        numero_camera INTEGER NOT NULL CHECK(numero_camera IN (1, 2)),
+        FOREIGN KEY (id_capteur) REFERENCES capteur(id_capteur) ON DELETE CASCADE
     );
 
-    -- Table configuration
-    CREATE TABLE IF NOT EXISTS configuration (
-        cle TEXT PRIMARY KEY,
-        valeur TEXT,
-        date_modification TEXT DEFAULT (datetime('now'))
-    );
-
-    -- Index pour améliorer les performances
-    CREATE INDEX IF NOT EXISTS idx_evenement_device_timestamp ON evenement(timestamp);
-    CREATE INDEX IF NOT EXISTS idx_evenement_event_id ON evenement(event_id);
-    CREATE INDEX IF NOT EXISTS idx_media_evenement ON media(id_evenement);
     CREATE INDEX IF NOT EXISTS idx_media_capteur ON media(id_capteur);
-    CREATE INDEX IF NOT EXISTS idx_capteur_device ON capteur(device_id);
+    CREATE INDEX IF NOT EXISTS idx_media_date ON media(date DESC);
+    CREATE INDEX IF NOT EXISTS idx_media_camera ON media(numero_camera);
 
-    -- Insertion de données de test (optionnel)
-    INSERT OR IGNORE INTO capteur (id_capteur, nom_capteur, type_capteur, device_id, actif)
-    VALUES
-        (1, 'PIR Entrée', 'motion', 'raspberry-1', 1),
-        (2, 'Tapis Pression', 'pressure', 'raspberry-1', 1),
-        (3, 'Bouton Panique', 'button', 'raspberry-1', 1),
-        (4, 'Caméra Principale', 'camera', 'raspberry-1', 1);
-
-    -- Configuration par défaut
-    INSERT OR IGNORE INTO configuration (cle, valeur)
-    VALUES
-        ('mode_surveillance', 'actif'),
-        ('record_duration', '10'),
-        ('video_resolution', '1280x720'),
-        ('video_fps', '30');
+    -- Données initiales: Capteurs
+    INSERT OR IGNORE INTO capteur (id_capteur, nom_capteur, etat_capteur) VALUES
+    (1, 'PIR Entrée', 1),
+    (2, 'Tapis Salon', 1),
+    (3, 'Bouton Arrêt', 1),
+    (4, 'Caméra 1', 1),
+    (5, 'Caméra 2', 1);
 
   init-recordings.sql: |
     -- Initialisation de la base de données recordings.db
