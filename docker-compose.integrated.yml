@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # MQTT Broker (Mosquitto)
+  # ============================================
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: mqtt-broker
+    ports:
+      - "1883:1883"   # MQTT
+      - "9001:9001"   # WebSocket
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+
+  # ============================================
+  # Sensor Motion (votre capteur PIR existant)
+  # ============================================
+  sensor-motion:
+    build:
+      context: ./sensor-motion
+      dockerfile: Dockerfile
+    container_name: sensor-motion
+    privileged: true
+    devices:
+      - /dev/gpiomem:/dev/gpiomem
+    environment:
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=1883
+      - MQTT_TOPIC=sensor/motion
+      - SENSOR_PIN=17
+      - DEVICE_ID=raspberry-1
+      - DELAI_ANTI_SPAM=2
+    depends_on:
+      mqtt-broker:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+
+  # ============================================
+  # MQTT Bridge - Envoie les événements au backend cloud
+  # ============================================
+  mqtt-bridge:
+    build:
+      context: ./mqtt-bridge
+      dockerfile: Dockerfile
+    container_name: mqtt-bridge
+    restart: unless-stopped
+    depends_on:
+      mqtt-broker:
+        condition: service_started
+    environment:
+      # Configuration MQTT (local)
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=1883
+      - MQTT_USERNAME=
+      - MQTT_PASSWORD=
+
+      # Configuration Backend (cloud)
+      # ⚠️ IMPORTANT: Modifier avec l'URL de votre backend cloud
+      - BACKEND_URL=${BACKEND_URL:-http://host.docker.internal:8000}
+
+    networks:
+      - surveillance-network
+
+  # ============================================
+  # Capture Video - Enregistre 10s sur détection
+  # ============================================
+  capture-video:
+    build:
+      context: ./capture-video
+      dockerfile: Dockerfile
+    container_name: capture-video
+    privileged: true
+    devices:
+      - /dev/video0:/dev/video0      # Caméra
+      - /dev/vchiq:/dev/vchiq        # GPU Raspberry Pi
+    environment:
+      - MQTT_BROKER=mqtt-broker
+      - MQTT_PORT=1883
+      - MQTT_TOPIC_MOTION=sensor/motion
+      - DEVICE_ID=raspberry-1
+      - RECORD_DURATION=10
+      - VIDEO_WIDTH=1280
+      - VIDEO_HEIGHT=720
+      - VIDEO_FPS=30
+    volumes:
+      - ./data/recordings:/data      # Persister la base SQLite
+    depends_on:
+      mqtt-broker:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - surveillance-network
+
+  # ============================================
+  # MediaMTX - Serveur de streaming vidéo
+  # ============================================
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    ports:
+      - "8554:8554"    # RTSP
+      - "8889:8889"    # HLS
+      - "8890:8890"    # WebRTC
+    volumes:
+      - ./mediamtx/config:/config
+    networks:
+      - surveillance-network
+
+networks:
+  surveillance-network:
+    driver: bridge

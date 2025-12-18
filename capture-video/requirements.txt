@@ -1,0 +1,10 @@
+# Dépendances pour le service de capture vidéo
+
+# MQTT Client
+paho-mqtt==1.6.1
+
+# API Flask pour visualisation
+flask==3.0.0
+flask-cors==4.0.0
+
+# Pas besoin d'autres dépendances, sqlite3 est inclus avec Python

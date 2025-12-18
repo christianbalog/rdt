@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: surveillance-frontend
+  labels:
+    app: surveillance-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: surveillance-frontend
+  template:
+    metadata:
+      labels:
+        app: surveillance-frontend
+    spec:
+      containers:
+      - name: frontend
+        image: surveillance-frontend:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 80
+          name: http
+        env:
+        - name: VITE_API_URL
+          valueFrom:
+            configMapKeyRef:
+              name: surveillance-config
+              key: api_url
+        - name: VITE_WS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: surveillance-config
+              key: ws_url
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: surveillance-frontend
+  labels:
+    app: surveillance-frontend
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+    protocol: TCP
+    name: http
+  selector:
+    app: surveillance-frontend
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: surveillance-config
+data:
+  api_url: "http://surveillance-backend:8000"
+  ws_url: "ws://surveillance-backend:8000"

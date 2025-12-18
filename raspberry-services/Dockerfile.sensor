@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Installer les dépendances système pour GPIO (si nécessaire)
+# RUN apt-get update && apt-get install -y \
+#     python3-rpi.gpio \
+#     && rm -rf /var/lib/apt/lists/*
+
+# Installer les dépendances Python
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copier le script
+COPY sensor-publisher.py .
+
+# Variables d'environnement par défaut
+ENV MQTT_BROKER=mosquitto
+ENV MQTT_PORT=1883
+ENV DEVICE_ID=raspberry-01
+
+# Lancer le publisher
+CMD ["python", "-u", "sensor-publisher.py"]
