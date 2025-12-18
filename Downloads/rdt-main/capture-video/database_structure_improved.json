@@ -1,0 +1,305 @@
+{
+  "database": "surveillance.db",
+  "tables": {
+    "capteur": {
+      "description": "Capteurs physiques connectés au Raspberry Pi",
+      "columns": {
+        "id_capteur": {
+          "type": "INTEGER",
+          "primary_key": true,
+          "auto_increment": true
+        },
+        "nom_capteur": {
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Nom du capteur (ex: 'PIR Entrée', 'Tapis Salon')"
+        },
+        "type_capteur": {
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Type: 'motion', 'pressure', 'button', etc.",
+          "suggestion": "NOUVEAU - Pour filtrer facilement par type"
+        },
+        "device_id": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "ID MQTT du device (ex: 'raspberry-1')",
+          "suggestion": "NOUVEAU - Pour systèmes multi-Raspberry Pi"
+        },
+        "actif": {
+          "type": "INTEGER",
+          "nullable": false,
+          "default": 1,
+          "description": "0 = désactivé, 1 = actif",
+          "suggestion": "NOUVEAU - Pour activer/désactiver des capteurs sans les supprimer"
+        },
+        "date_creation": {
+          "type": "TEXT",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP",
+          "suggestion": "NOUVEAU - Traçabilité"
+        }
+      },
+      "indexes": [
+        "CREATE INDEX idx_capteur_type ON capteur(type_capteur)",
+        "CREATE INDEX idx_capteur_actif ON capteur(actif)"
+      ]
+    },
+
+    "evenement": {
+      "description": "Événements générés par les capteurs",
+      "columns": {
+        "id_evenement": {
+          "type": "INTEGER",
+          "primary_key": true,
+          "auto_increment": true
+        },
+        "event_id": {
+          "type": "TEXT",
+          "nullable": true,
+          "unique": true,
+          "description": "UUID de l'événement MQTT",
+          "suggestion": "NOUVEAU - Pour tracer les événements entre MQTT et DB"
+        },
+        "date_evenement": {
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Format ISO 8601"
+        },
+        "timestamp": {
+          "type": "REAL",
+          "nullable": false,
+          "description": "Timestamp Unix pour calculs rapides",
+          "suggestion": "NOUVEAU - Plus efficace pour les requêtes de plage"
+        },
+        "etat_capteur": {
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "0 = absence/relâché, 1 = présence/appuyé"
+        },
+        "id_capteur": {
+          "type": "INTEGER",
+          "foreign_key": {
+            "references": "capteur.id_capteur",
+            "on_delete": "CASCADE"
+          },
+          "nullable": false
+        },
+        "metadata": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "JSON avec données additionnelles",
+          "suggestion": "NOUVEAU - Pour stocker des infos contextuelles"
+        }
+      },
+      "indexes": [
+        "CREATE INDEX idx_evenement_capteur ON evenement(id_capteur, date_evenement DESC)",
+        "CREATE INDEX idx_evenement_timestamp ON evenement(timestamp DESC)",
+        "CREATE INDEX idx_evenement_event_id ON evenement(event_id)"
+      ]
+    },
+
+    "media": {
+      "description": "Photos ou vidéos capturées par les caméras",
+      "columns": {
+        "id_media": {
+          "type": "INTEGER",
+          "primary_key": true,
+          "auto_increment": true
+        },
+        "type_media": {
+          "type": "TEXT",
+          "nullable": false,
+          "description": "'video' ou 'photo'",
+          "suggestion": "NOUVEAU - Pour différencier photos et vidéos"
+        },
+        "video": {
+          "type": "BLOB",
+          "nullable": false,
+          "description": "Contenu binaire du média"
+        },
+        "taille": {
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "Taille en bytes",
+          "suggestion": "NOUVEAU - Pour stats et gestion espace disque"
+        },
+        "duree": {
+          "type": "INTEGER",
+          "nullable": true,
+          "description": "Durée en secondes (pour vidéos uniquement)",
+          "suggestion": "NOUVEAU - Utile pour les vidéos"
+        },
+        "date_media": {
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Format ISO 8601"
+        },
+        "timestamp": {
+          "type": "REAL",
+          "nullable": false,
+          "description": "Timestamp Unix",
+          "suggestion": "NOUVEAU - Pour requêtes rapides"
+        },
+        "id_capteur": {
+          "type": "INTEGER",
+          "foreign_key": {
+            "references": "capteur.id_capteur",
+            "on_delete": "CASCADE"
+          },
+          "nullable": false
+        },
+        "id_evenement": {
+          "type": "INTEGER",
+          "foreign_key": {
+            "references": "evenement.id_evenement",
+            "on_delete": "SET NULL"
+          },
+          "nullable": true,
+          "description": "Lien vers l'événement déclencheur",
+          "suggestion": "NOUVEAU - Pour retrouver quel événement a déclenché la capture"
+        },
+        "numero_camera": {
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "Identifiant de la caméra (1 ou 2)"
+        },
+        "resolution": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "ex: '1280x720'",
+          "suggestion": "NOUVEAU - Traçabilité technique"
+        },
+        "codec": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "ex: 'h264', 'mjpeg'",
+          "suggestion": "NOUVEAU - Pour savoir comment décoder"
+        }
+      },
+      "indexes": [
+        "CREATE INDEX idx_media_capteur ON media(id_capteur, date_media DESC)",
+        "CREATE INDEX idx_media_evenement ON media(id_evenement)",
+        "CREATE INDEX idx_media_camera ON media(numero_camera, date_media DESC)",
+        "CREATE INDEX idx_media_timestamp ON media(timestamp DESC)",
+        "CREATE INDEX idx_media_type ON media(type_media)"
+      ]
+    },
+
+    "notification": {
+      "description": "NOUVELLE TABLE - Historique des notifications envoyées",
+      "columns": {
+        "id_notification": {
+          "type": "INTEGER",
+          "primary_key": true,
+          "auto_increment": true
+        },
+        "id_evenement": {
+          "type": "INTEGER",
+          "foreign_key": {
+            "references": "evenement.id_evenement",
+            "on_delete": "CASCADE"
+          },
+          "nullable": false
+        },
+        "mode": {
+          "type": "TEXT",
+          "nullable": false,
+          "description": "'actif' ou 'surveillance'"
+        },
+        "envoyee": {
+          "type": "INTEGER",
+          "nullable": false,
+          "description": "0 = non envoyée, 1 = envoyée"
+        },
+        "date_notification": {
+          "type": "TEXT",
+          "nullable": false
+        },
+        "type_notification": {
+          "type": "TEXT",
+          "nullable": true,
+          "description": "'websocket', 'email', 'sms', etc."
+        }
+      },
+      "indexes": [
+        "CREATE INDEX idx_notification_evenement ON notification(id_evenement)",
+        "CREATE INDEX idx_notification_date ON notification(date_notification DESC)"
+      ],
+      "suggestion": "NOUVELLE TABLE - Pour tracer l'historique des notifications"
+    },
+
+    "configuration": {
+      "description": "NOUVELLE TABLE - Paramètres système",
+      "columns": {
+        "cle": {
+          "type": "TEXT",
+          "primary_key": true,
+          "description": "Nom du paramètre"
+        },
+        "valeur": {
+          "type": "TEXT",
+          "nullable": false,
+          "description": "Valeur du paramètre (JSON si complexe)"
+        },
+        "date_modification": {
+          "type": "TEXT",
+          "nullable": false,
+          "default": "CURRENT_TIMESTAMP"
+        }
+      },
+      "examples": [
+        "INSERT INTO configuration VALUES ('mode_systeme', 'surveillance', datetime('now'))",
+        "INSERT INTO configuration VALUES ('duree_enregistrement', '10', datetime('now'))",
+        "INSERT INTO configuration VALUES ('resolution_video', '1280x720', datetime('now'))"
+      ],
+      "suggestion": "NOUVELLE TABLE - Pour stocker la config sans fichiers"
+    }
+  },
+
+  "recommendations": {
+    "ameliorations_proposees": {
+      "capteur": [
+        "+ type_capteur: pour différencier motion/pressure/button",
+        "+ device_id: support multi-Raspberry Pi",
+        "+ actif: activation/désactivation sans supprimer",
+        "+ date_creation: traçabilité"
+      ],
+      "evenement": [
+        "+ event_id: UUID pour tracer MQTT <-> DB",
+        "+ timestamp: Unix timestamp pour requêtes rapides",
+        "+ metadata: JSON pour infos additionnelles"
+      ],
+      "media": [
+        "+ type_media: différencier vidéo/photo",
+        "+ taille: gestion espace disque",
+        "+ duree: durée des vidéos",
+        "+ timestamp: requêtes optimisées",
+        "+ id_evenement: lien vers événement déclencheur",
+        "+ resolution et codec: traçabilité technique"
+      ],
+      "nouvelles_tables": [
+        "+ notification: historique des notifications",
+        "+ configuration: paramètres système centralisés"
+      ]
+    },
+    "performance": [
+      "Ajouter des index sur colonnes fréquemment utilisées",
+      "Utiliser timestamp (REAL) plutôt que date texte pour requêtes rapides",
+      "VACUUM régulièrement pour compacter",
+      "Limiter taille BLOBs à 10 MB max"
+    ],
+    "maintenance": [
+      "Script backup quotidien automatique",
+      "Purge auto médias > 30 jours (configurable)",
+      "Monitoring taille DB",
+      "Vérification intégrité (PRAGMA integrity_check)"
+    ],
+    "fonctionnalites": [
+      "Vue SQL pour événements récents avec médias",
+      "Trigger pour purge automatique anciens médias",
+      "Stored queries fréquentes",
+      "Export statistiques JSON"
+    ]
+  }
+}

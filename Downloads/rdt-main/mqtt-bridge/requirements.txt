@@ -1,0 +1,7 @@
+# Dépendances pour mqtt-bridge
+
+# MQTT Client
+paho-mqtt==1.6.1
+
+# HTTP Requests
+requests==2.31.0

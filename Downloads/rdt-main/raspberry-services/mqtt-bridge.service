@@ -1,0 +1,20 @@
+[Unit]
+Description=MQTT Bridge to Backend HTTP
+After=network.target mosquitto.service
+Wants=mosquitto.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/surveillance
+ExecStart=/usr/bin/python3 /home/pi/surveillance/mqtt-bridge.py
+Restart=always
+RestartSec=10
+
+# Variables d'environnement
+Environment="MQTT_BROKER=localhost"
+Environment="MQTT_PORT=1883"
+Environment="BACKEND_URL=http://192.168.1.100:8000"
+
+[Install]
+WantedBy=multi-user.target

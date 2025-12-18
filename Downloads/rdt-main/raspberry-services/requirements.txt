@@ -1,0 +1,13 @@
+# Dépendances Python pour les scripts Raspberry Pi
+
+# MQTT Client
+paho-mqtt==1.6.1
+
+# HTTP Requests
+requests==2.31.0
+
+# GPIO pour Raspberry Pi (optionnel, seulement sur le Pi)
+# RPi.GPIO==0.7.1
+
+# Caméra Raspberry Pi (optionnel)
+# picamera==1.13

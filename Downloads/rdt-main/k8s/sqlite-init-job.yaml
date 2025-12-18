@@ -1,0 +1,62 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: sqlite-init-job
+  namespace: default
+  labels:
+    app: sqlite-init
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: sqlite-init
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: sqlite-init
+        image: alpine:latest
+        command:
+        - /bin/sh
+        - -c
+        - |
+          apk add --no-cache sqlite
+
+          echo "Initialisation de surveillance.db..."
+          if [ ! -f /data/surveillance.db ]; then
+            sqlite3 /data/surveillance.db < /scripts/init-surveillance.sql
+            echo "✅ surveillance.db créée avec succès"
+          else
+            echo "⚠️  surveillance.db existe déjà, skip"
+          fi
+
+          echo "Initialisation de recordings.db..."
+          if [ ! -f /data/recordings.db ]; then
+            sqlite3 /data/recordings.db < /scripts/init-recordings.sql
+            echo "✅ recordings.db créée avec succès"
+          else
+            echo "⚠️  recordings.db existe déjà, skip"
+          fi
+
+          echo "Vérification des bases de données..."
+          ls -lh /data/*.db
+
+          echo "Structure de surveillance.db:"
+          sqlite3 /data/surveillance.db ".tables"
+
+          echo "Structure de recordings.db:"
+          sqlite3 /data/recordings.db ".tables"
+
+          echo "✅ Initialisation terminée"
+        volumeMounts:
+        - name: sqlite-data
+          mountPath: /data
+        - name: init-scripts
+          mountPath: /scripts
+      volumes:
+      - name: sqlite-data
+        persistentVolumeClaim:
+          claimName: sqlite-pvc
+      - name: init-scripts
+        configMap:
+          name: sqlite-init-scripts

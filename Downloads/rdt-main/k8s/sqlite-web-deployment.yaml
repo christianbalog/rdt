@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sqlite-web
+  namespace: default
+  labels:
+    app: sqlite-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sqlite-web
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: sqlite-web
+    spec:
+      containers:
+      - name: sqlite-web
+        image: coleifer/sqlite-web:latest
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SQLITE_DATABASE
+          value: "/data/surveillance.db"
+        volumeMounts:
+        - name: sqlite-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+      volumes:
+      - name: sqlite-data
+        persistentVolumeClaim:
+          claimName: sqlite-pvc

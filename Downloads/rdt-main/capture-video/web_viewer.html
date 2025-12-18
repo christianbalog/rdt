@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualiseur de Vidéos - Surveillance</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .stats {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: space-around;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 10px;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .recordings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .recording-card {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .recording-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            padding-top: 56.25%; /* 16:9 */
+        }
+
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .recording-info {
+            padding: 15px;
+        }
+
+        .recording-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 10px;
+        }
+
+        .recording-meta {
+            display: flex;
+            justify-content: space-between;
+            color: #666;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-top: 10px;
+            text-align: center;
+            transition: background 0.3s ease;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .btn:hover {
+            background: #5568d3;
+        }
+
+        .btn-download {
+            background: #48bb78;
+        }
+
+        .btn-download:hover {
+            background: #38a169;
+        }
+
+        .loading {
+            text-align: center;
+            color: white;
+            font-size: 1.5em;
+            padding: 50px;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .refresh-btn {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 60px;
+            height: 60px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            font-size: 1.5em;
+            cursor: pointer;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        }
+
+        .refresh-btn:hover {
+            transform: rotate(180deg);
+            background: #5568d3;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: white;
+            padding: 50px;
+        }
+
+        .empty-state h2 {
+            font-size: 2em;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 Vidéos de Surveillance</h1>
+
+        <div class="stats" id="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="total-recordings">-</div>
+                <div class="stat-label">Enregistrements</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="total-size">-</div>
+                <div class="stat-label">Taille totale</div>
+            </div>
+        </div>
+
+        <div id="content">
+            <div class="loading">Chargement...</div>
+        </div>
+    </div>
+
+    <button class="refresh-btn" onclick="loadRecordings()" title="Actualiser">
+        🔄
+    </button>
+
+    <script>
+        const API_URL = 'http://localhost:5000/api';
+
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_URL}/recordings/stats`);
+                const data = await response.json();
+
+                document.getElementById('total-recordings').textContent = data.total_recordings;
+                document.getElementById('total-size').textContent = data.total_size_mb.toFixed(2) + ' MB';
+            } catch (error) {
+                console.error('Erreur stats:', error);
+            }
+        }
+
+        async function loadRecordings() {
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">Chargement...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/recordings?limit=50`);
+                const data = await response.json();
+
+                if (data.recordings.length === 0) {
+                    content.innerHTML = `
+                        <div class="empty-state">
+                            <h2>Aucun enregistrement</h2>
+                            <p>Les vidéos apparaîtront ici quand le capteur détectera un mouvement</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                const grid = document.createElement('div');
+                grid.className = 'recordings-grid';
+
+                data.recordings.forEach(recording => {
+                    const card = createRecordingCard(recording);
+                    grid.appendChild(card);
+                });
+
+                content.innerHTML = '';
+                content.appendChild(grid);
+
+                loadStats();
+
+            } catch (error) {
+                content.innerHTML = `
+                    <div class="error">
+                        <strong>Erreur de connexion</strong><br>
+                        Impossible de charger les enregistrements.<br>
+                        Vérifiez que l'API est démarrée: <code>docker compose exec -d capture-video python3 api_recordings.py</code>
+                    </div>
+                `;
+                console.error('Erreur:', error);
+            }
+        }
+
+        function createRecordingCard(recording) {
+            const card = document.createElement('div');
+            card.className = 'recording-card';
+
+            const date = new Date(recording.created_at);
+            const formattedDate = date.toLocaleString('fr-FR');
+
+            const sizeMB = (recording.video_size / 1024 / 1024).toFixed(2);
+
+            card.innerHTML = `
+                <div class="video-container">
+                    <video controls preload="metadata">
+                        <source src="${API_URL}/recordings/${recording.id}/video" type="video/mp4">
+                        Votre navigateur ne supporte pas la lecture vidéo.
+                    </video>
+                </div>
+                <div class="recording-info">
+                    <div class="recording-title">Enregistrement #${recording.id}</div>
+                    <div class="recording-meta">
+                        <span>📅 ${formattedDate}</span>
+                    </div>
+                    <div class="recording-meta">
+                        <span>🎥 ${recording.device_id}</span>
+                        <span>📦 ${sizeMB} MB</span>
+                    </div>
+                    <div class="recording-meta">
+                        <span>⏱️ ${recording.duration}s</span>
+                    </div>
+                    <a href="${API_URL}/recordings/${recording.id}/video"
+                       download="recording_${recording.id}.mp4"
+                       class="btn btn-download">
+                        ⬇️ Télécharger
+                    </a>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // Charger au démarrage
+        loadRecordings();
+
+        // Auto-refresh toutes les 30 secondes
+        setInterval(loadRecordings, 30000);
+    </script>
+</body>
+</html>
